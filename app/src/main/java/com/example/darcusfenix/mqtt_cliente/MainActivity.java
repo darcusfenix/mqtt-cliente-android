@@ -3,6 +3,7 @@ package com.example.darcusfenix.mqtt_cliente;
 import android.os.Bundle;
 import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import org.eclipse.paho.android.service.MqttAndroidClient;
@@ -11,7 +12,6 @@ import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken;
 import org.eclipse.paho.client.mqttv3.IMqttToken;
 import org.eclipse.paho.client.mqttv3.MqttCallback;
 import org.eclipse.paho.client.mqttv3.MqttClient;
-import org.eclipse.paho.client.mqttv3.MqttConnectOptions;
 import org.eclipse.paho.client.mqttv3.MqttException;
 import org.eclipse.paho.client.mqttv3.MqttMessage;
 
@@ -20,7 +20,12 @@ import java.io.UnsupportedEncodingException;
 public class MainActivity extends AppCompatActivity {
 
     private static final String TAG = "Main";
-    MqttAndroidClient mClient;
+    private static final String URI = "tcp://activemq3870.cloudapp.net";
+    private static final String TOPICO = "cemex/prospectos";
+
+    MqttAndroidClient cliente;
+    String mensajeAEnviar;
+    TextView tv;
 
 
     @Override
@@ -28,83 +33,115 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
+        tv = (TextView) findViewById(R.id.texto);
+
         String clientId = MqttClient.generateClientId();
-        mClient =
-                new MqttAndroidClient(this.getApplicationContext(), "tcp://activemq3870.cloudapp.net",
-                        clientId);
-        MqttConnectOptions options = new MqttConnectOptions();
-        options.setMqttVersion(MqttConnectOptions.MQTT_VERSION_DEFAULT);
+        mensajeAEnviar = "Hola! Soy un Android";
+        cliente = new MqttAndroidClient(
+                this.getApplicationContext(),
+                URI,
+                clientId);
+
+        conectarse();
+
+    }
+
+    private void conectarse() {
 
         try {
 
-            IMqttToken token = mClient.connect();
+            IMqttToken token = cliente.connect();
             token.setActionCallback(new IMqttActionListener() {
                 @Override
                 public void onSuccess(IMqttToken asyncActionToken) {
-                    // We are connected
-                    Log.d(TAG, "onSuccess");
+
+                    Log.d(TAG, "Estoy conectado a MQTT");
                     suscribirse();
+
                 }
 
                 @Override
                 public void onFailure(IMqttToken asyncActionToken, Throwable exception) {
-                    // Something went wrong e.g. connection timeout or firewall problems
-                    Log.d(TAG, "onFailure");
+
+                    Log.d(TAG, "Falló la conexión");
                     Log.d(TAG, exception.getMessage());
 
                 }
             });
 
         } catch (MqttException e) {
+
             Log.d(TAG, e.getMessage());
-            e.printStackTrace();
+
         }
 
     }
 
-    public void suscribirse(){
-        String topic = "mqtt/demo";
+    private void escucharMensajesARecibir() {
+
+        cliente.setCallback(new MqttCallback() {
+
+            @Override
+            public void connectionLost(Throwable cause) {
+
+            }
+
+            @Override
+            public void messageArrived(String topic, MqttMessage message) throws Exception {
+
+                Log.d(TAG, "MENSAJE ENTRANTE POR: " + topic);
+                String mensajeRecibido = message.toString();
+                tv.setText(mensajeRecibido);
+                Toast.makeText(getApplication(), mensajeRecibido, Toast.LENGTH_SHORT).show();
+
+            }
+
+            @Override
+            public void deliveryComplete(IMqttDeliveryToken token) {
+
+            }
+
+        });
+
+    }
+
+    private void enviarMensaje(String mensaje) {
+
+        byte[] encodedPayload = new byte[0];
+        try {
+
+            encodedPayload = mensaje.getBytes("UTF-8");
+            MqttMessage message = new MqttMessage(encodedPayload);
+            message.setRetained(true);
+
+            cliente.publish(TOPICO, message);
+
+        } catch (UnsupportedEncodingException | MqttException e) {
+
+            e.printStackTrace();
+
+        }
+
+    }
+
+    public void suscribirse() {
+
         int qos = 1;
         try {
-            IMqttToken subToken = mClient.subscribe(topic, qos);
+
+            IMqttToken subToken = cliente.subscribe(TOPICO, qos);
             subToken.setActionCallback(new IMqttActionListener() {
+
                 @Override
                 public void onSuccess(IMqttToken asyncActionToken) {
-                    // The message was published
 
+                    Log.d(TAG, "ESTOY SUSCRITO A: " + TOPICO);
 
-                    Log.d(TAG, "onSuccess topic");
+                    // TODO, OPCIONAL, PARA PRUEBAS
+                    enviarMensaje(mensajeAEnviar);
 
-                    String payload = "the payload desde android";
-                    byte[] encodedPayload = new byte[0];
-                    try {
-                        encodedPayload = payload.getBytes("UTF-8");
-                        MqttMessage message = new MqttMessage(encodedPayload);
-                        message.setRetained(true);
-
-                        mClient.publish("mqtt/demo", message);
-                    } catch (UnsupportedEncodingException | MqttException e) {
-                        e.printStackTrace();
-                    }
-
-                    mClient.setCallback(new MqttCallback() {
-                        @Override
-                        public void connectionLost(Throwable cause) {
-
-                        }
-
-                        @Override
-                        public void messageArrived(String topic, MqttMessage message) throws Exception {
-                            Log.d(TAG, "MENSAJE ENTRANTE");
-                            Log.d(TAG, topic);
-                            Toast.makeText(getApplication(), message.toString(), Toast.LENGTH_SHORT).show();
-                        }
-
-                        @Override
-                        public void deliveryComplete(IMqttDeliveryToken token) {
-
-                        }
-                    });
+                    // TODO, IMPORTANTE
+                    escucharMensajesARecibir();
 
                 }
 
@@ -114,13 +151,18 @@ public class MainActivity extends AppCompatActivity {
                     // The subscription could not be performed, maybe the user was not
                     // authorized to subscribe on the specified topic e.g. using wildcards
 
-                    Log.d(TAG, "error topic");
+                    Log.d(TAG, "ERROR DE CONEXIÓN AL TOPICO: " + TOPICO);
+
                 }
+
             });
 
         } catch (MqttException e) {
+
             e.printStackTrace();
+
         }
 
     }
+
 }
